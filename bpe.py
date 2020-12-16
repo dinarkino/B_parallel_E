@@ -17,12 +17,17 @@ class BPE:
     Class for training and applying Byte Pair Encoding
     :param vocab_size: resulting vocabulary size
     :param max_iters: maximum iterations to perform. By default vocab_size * 2
-    :param bpe_patj: path to file to load vocab from and save vocab to
+    :param tokens_path: path to file to load vocab from and save vocab to
     :param comm: MPI.COMM_WORLD object for parallel processing
     :param verbose: wether to print progress bar
     """
-    def __init__(self, vocab_size: int, max_iters: Optional[int] = None, tokens_path: str = None,
-                 id2token_path: str = None, encodings_path: str = None, comm=None, verbose: bool = True) -> None:
+    def __init__(self, vocab_size: int,
+                 max_iters: Optional[int] = None,
+                 tokens_path: str = None,
+                 id2token_path: str = None,
+                 encodings_path: str = None,
+                 comm=None,
+                 verbose: bool = True) -> None:
         self.vocab_size = vocab_size
         self.max_iters = max_iters if max_iters is not None else vocab_size * 2
         self.vocab = Counter()
@@ -130,12 +135,12 @@ class BPE:
             raise ModelNotTrainedError("BPE model is not trained. Call train before applying the model")
         
         words = corpus.strip().split()
-        words_per_process = len(words) // size
+        words_per_process = len(words) // self.size
 
         if self.rank == self.size - 1:
             words = words[self.rank * words_per_process:]
         else:
-            words = words[self.rank * words_per_process:(rank + 1) * words_per_process]
+            words = words[self.rank * words_per_process:(self.rank + 1) * words_per_process]
 
         words_string = '</w>'.join(words) + '</w>'
 
@@ -145,7 +150,7 @@ class BPE:
             if len(tokens) == 0:
                 return [0]
 
-            token = token[0]
+            token = tokens[0]
             token_reg = re.escape(token)
 
             string_tokens = []
@@ -167,7 +172,7 @@ class BPE:
 
         ids = _encode(words_string, self.tokens, 1)
         ids = self.comm.gather(ids, root=0)
-        ids = [item for sublist in t for item in sublist]
+        ids = [item for sublist in ids for item in sublist]
         
         with open(hydra.utils.to_absolute_path(self.encodings_path), "wb") as f:
                 pickle.dump(ids, f)

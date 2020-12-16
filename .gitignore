@@ -1,0 +1,7 @@
+# Pycharm folders
+.idea
+__pycache__/
+id2token.pkl
+outputs/
+tokens.pkl
+
