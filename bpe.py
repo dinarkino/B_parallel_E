@@ -1,4 +1,5 @@
 import pickle
+import re
 from collections import Counter
 from pathlib import Path
 from typing import List, Optional
@@ -20,19 +21,31 @@ class BPE:
     :param comm: MPI.COMM_WORLD object for parallel processing
     :param verbose: wether to print progress bar
     """
-    def __init__(self, vocab_size: int, max_iters: Optional[int] = None,
-                 bpe_path: str = None, comm=None, verbose: bool = True) -> None:
+    def __init__(self, vocab_size: int, max_iters: Optional[int] = None, tokens_path: str = None,
+                 id2token_path: str = None, encodings_path: str = None, comm=None, verbose: bool = True) -> None:
         self.vocab_size = vocab_size
         self.max_iters = max_iters if max_iters is not None else vocab_size * 2
         self.vocab = Counter()
         self.comm = comm
+        self.size = comm.Get_size()
+        self.rank = comm.Get_rank()
         self.verbose = verbose
-        if bpe_path is not None:
-            self.bpe_path = Path(bpe_path)
-            if self.bpe_path.exists():
-                with open(self.bpe_path, "rb") as f:
-                    self.vocab = pickle.load(f)
-                    assert isinstance(self.vocab, Counter)
+        if tokens_path is not None:
+            self.tokens_path = Path(bpe_path)
+            if self.tokens_path.exists():
+                with open(self.tokens_path, "rb") as f:
+                    self.tokens = pickle.load(f)
+                    assert isinstance(self.tokens, list)
+                    
+        if id2token_path is not None:
+            self.id2token_path = Path(id2token_path)
+            if self.id2token_path.exists():
+                with open(self.id2token_path, "rb") as f:
+                    self.id2token = pickle.load(f)
+                    assert isinstance(self.id2token, Counter)
+                    
+        if encodings_path is not None:
+            self.encodings_path = Path(encodings_path)
 
     def train(self, corpus: str) -> None:
         rank = self.comm.Get_rank()
@@ -95,18 +108,69 @@ class BPE:
         if rank == 0 and self.verbose:
             pbar.close()
 
+        tokens_sorted = sorted(vocab.keys(), 
+                               key=lambda tok: len(tok) - 3 if tok.endswith('</w>') else len(tok),
+                               reverse=True)
+        self.tokens = tokens_sorted
+        self.id2token = {i + 1: tok for i, tok in enumerate(tokens_sorted)}
+        self.id2token[0] = '<UNK>'
         # Save vocab
-        self.vocab = vocab
         if rank == 0:
-            with open(hydra.utils.to_absolute_path(self.bpe_path), "wb") as f:
-                pickle.dump(self.vocab, f)
+            with open(hydra.utils.to_absolute_path(self.tokens_path), "wb") as f:
+                pickle.dump(self.tokens, f)
+            with open(hydra.utils.to_absolute_path(self.id2token_path), "wb") as f:
+                pickle.dump(self.id2token, f)
 
-    def encode(self, corpus: str) -> List[str]:
+    def encode(self, corpus: str) -> List[int]:
         """
         Apply byte pair encodung to text
         :param corpus: string with text to encode
         :return: list of strings -- encoded text
         """
-        if len(self.vocab) == 0:
+        if len(self.tokens) == 0:
             raise ModelNotTrainedError("BPE model is not trained. Call train before applying the model")
-        raise NotImplementedError()
+        
+        words = corpus.strip().split()
+        words_per_process = len(words) // size
+
+        if self.rank == self.size - 1:
+            words = words[self.rank * words_per_process:]
+        else:
+            words = words[self.rank * words_per_process:(rank + 1) * words_per_process]
+
+        words_string = '</w>'.join(words) + '</w>'
+
+        def _encode(string, tokens, id):
+            if string == '':
+                return []
+            if len(tokens) == 0:
+                return [0]
+
+            token = token[0]
+            token_reg = re.escape(token)
+
+            string_tokens = []
+            matched_positions = [(m.start(0), m.end(0)) for m in re.finditer(token_reg, string)]
+            if len(matched_positions) == 0:
+                return _encode(string, tokens[1:], id + 1)
+            substring_end_positions = [matched_position[0] for matched_position in matched_positions]
+
+            substring_start_position = 0
+            for substring_end_position in substring_end_positions:
+                substring = string[substring_start_position:substring_end_position]
+                string_tokens += _encode(substring, tokens[1:], id + 1)
+                string_tokens += [id]
+                substring_start_position = substring_end_position + len(token)
+            remaining_substring = string[substring_start_position:]
+            string_tokens += _encode(remaining_substring, tokens[1:], id + 1)
+
+            return string_tokens
+
+        ids = _encode(words_string, self.tokens, 1)
+        ids = self.comm.gather(ids, root=0)
+        ids = [item for sublist in t for item in sublist]
+        
+        with open(hydra.utils.to_absolute_path(self.encodings_path), "wb") as f:
+                pickle.dump(ids, f)
+    
+        
