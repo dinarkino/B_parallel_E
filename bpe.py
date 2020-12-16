@@ -55,7 +55,6 @@ class BPE:
     def train(self, corpus: str) -> None:
         rank = self.comm.Get_rank()
 
-
         corpus = corpus.lower().split()
         vocab = Counter(c for word in corpus for c in word)  # Count each element
         vocab["</w>"] = len(corpus)
