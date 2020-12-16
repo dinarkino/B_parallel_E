@@ -1,0 +1,4 @@
+text_path: "pride.txt"  # path to file to take text from
+vocab_size: 1000
+max_iters: 2000
+bpe_path: "bpe.pickle"  # path to file to save vocab dict to
