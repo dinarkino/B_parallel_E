@@ -2,4 +2,6 @@ text_path: "pride.txt"  # path to file to take text from
 vocab_size: 1000
 max_iters: 2000
 verbose: True  # Whether to print progress bar
-bpe_path: "bpe.pickle"  # path to file to save vocab dict to
+tokens_path: "tokens.pkl"  # path to file to save vocab dict to
+id2token_path: "id2token.pkl"
+encodings_path: "encodings.pkl"
