@@ -31,7 +31,7 @@ class BPE:
         self.rank = comm.Get_rank()
         self.verbose = verbose
         if tokens_path is not None:
-            self.tokens_path = Path(bpe_path)
+            self.tokens_path = Path(tokens_path)
             if self.tokens_path.exists():
                 with open(self.tokens_path, "rb") as f:
                     self.tokens = pickle.load(f)
@@ -49,7 +49,6 @@ class BPE:
 
     def train(self, corpus: str) -> None:
         rank = self.comm.Get_rank()
-
 
         corpus = corpus.lower().split()
         vocab = Counter(c for word in corpus for c in word)  # Count each element
