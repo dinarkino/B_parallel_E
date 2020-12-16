@@ -12,7 +12,12 @@ TEXT_SEND_TAG = 1
 def main(cfg: DictConfig):
     comm = MPI.COMM_WORLD
 
-    bpe_obj = bpe.BPE(vocab_size=cfg.vocab_size, max_iters=cfg.max_iters, bpe_path=cfg.bpe_path, comm=comm)
+    bpe_obj = bpe.BPE(max_iters=cfg.max_iters,
+                      vocab_size=cfg.vocab_size,
+                      tokens_path=cfg.tokens_path,
+                      id2token_path=cfg.id2token_path,
+                      encodings_path=cfg.encodings_path,
+                      comm=comm)
 
     if comm.Get_rank() == 0:
         with open(hydra.utils.to_absolute_path(cfg.text_path), "r") as f:
