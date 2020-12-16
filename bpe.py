@@ -1,5 +1,4 @@
 import pickle
-import time
 from collections import Counter
 from pathlib import Path
 from typing import List, Optional
