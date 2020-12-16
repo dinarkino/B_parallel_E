@@ -4,6 +4,7 @@ from collections import Counter
 from pathlib import Path
 from typing import List, Optional
 
+import hydra
 from tqdm.auto import tqdm
 
 
@@ -18,12 +19,15 @@ class BPE:
     :param max_iters: maximum iterations to perform. By default vocab_size * 2
     :param bpe_patj: path to file to load vocab from and save vocab to
     :param comm: MPI.COMM_WORLD object for parallel processing
+    :param verbose: wether to print progress bar
     """
-    def __init__(self, vocab_size: int, max_iters: Optional[int] = None, bpe_path: str = None, comm=None) -> None:
+    def __init__(self, vocab_size: int, max_iters: Optional[int] = None,
+                 bpe_path: str = None, comm=None, verbose: bool = True) -> None:
         self.vocab_size = vocab_size
         self.max_iters = max_iters if max_iters is not None else vocab_size * 2
         self.vocab = Counter()
         self.comm = comm
+        self.verbose = verbose
         if bpe_path is not None:
             self.bpe_path = Path(bpe_path)
             if self.bpe_path.exists():
@@ -32,24 +36,27 @@ class BPE:
                     assert isinstance(self.vocab, Counter)
 
     def train(self, corpus: str) -> None:
-        corpus = corpus.lower().split()
+        rank = self.comm.Get_rank()
 
-        # Take only necessary for this process part of corpus
-        step = len(corpus) // self.comm.Get_size() + 1
-        corpus = corpus[step * self.comm.Get_rank(): step * (self.comm.Get_rank() + 1)]
+
+        corpus = corpus.lower().split()
         vocab = Counter(c for word in corpus for c in word)  # Count each element
         vocab["</w>"] = len(corpus)
         vocab = self.comm.allreduce(vocab)
 
         # Transform words into tuples and count the occurrences of each word
+        # leave only the part necessary for this process
         corpus = [tuple(word) + ("</w>",) for word in corpus]
         corpus = Counter(corpus)
+        corpus = self.comm.allreduce(corpus)
+        step = len(corpus) // self.comm.Get_size() + 1
+        corpus = dict(list(corpus.items())[step * rank: step * (rank + 1)])
 
-        if self.comm.Get_rank() == 0:
+        if rank == 0 and self.verbose:
             pbar = tqdm(total=self.vocab_size)  # Progress bar
         for _ in range(self.max_iters):
             # Update progress bar
-            if self.comm.Get_rank() == 0:
+            if rank == 0 and self.verbose:
                 pbar.update(len(vocab) - pbar.n)
             if len(vocab) >= self.vocab_size:
                 break
@@ -86,13 +93,13 @@ class BPE:
                 del vocab[most_common_pair[1]]
         else:  # Maximum iterations exceeded
             print("Warning: Maximum iterations exceeded. Consider lowering vocab_size")
-        if self.comm.Get_rank() == 0:
+        if rank == 0 and self.verbose:
             pbar.close()
 
         # Save vocab
         self.vocab = vocab
-        if self.comm.Get_rank() == 0:
-            with open(self.bpe_path, "wb") as f:
+        if rank == 0:
+            with open(hydra.utils.to_absolute_path(self.bpe_path), "wb") as f:
                 pickle.dump(self.vocab, f)
 
     def encode(self, corpus: str) -> List[str]:
