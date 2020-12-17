@@ -27,13 +27,18 @@ class BPE:
                  id2token_path: str = None,
                  encodings_path: str = None,
                  comm=None,
+                 store_files=False,
                  verbose: bool = True) -> None:
         self.vocab_size = vocab_size
-        self.max_iters = max_iters if max_iters is not None else vocab_size * 2
+        if max_iters is None or isinstance(max_iters, str):
+            self.max_iters = vocab_size * 2
+        else:
+            self.max_iters = max_iters
         self.vocab = Counter()
         self.comm = comm
         self.size = comm.Get_size()
         self.rank = comm.Get_rank()
+        self.store_files = store_files
         self.verbose = verbose
         if tokens_path is not None:
             self.tokens_path = Path(tokens_path)
@@ -119,7 +124,7 @@ class BPE:
         self.id2token = {i + 1: tok for i, tok in enumerate(tokens_sorted)}
         self.id2token[0] = '<UNK>'
         # Save vocab
-        if rank == 0:
+        if rank == 0 and self.store_files:
             with open(hydra.utils.to_absolute_path(self.tokens_path), "wb") as f:
                 pickle.dump(self.tokens, f)
             with open(hydra.utils.to_absolute_path(self.id2token_path), "wb") as f:
