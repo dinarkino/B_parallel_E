@@ -14,9 +14,9 @@ def main(cfg: DictConfig):
 
     bpe_obj = bpe.BPE(max_iters=cfg.max_iters,
                       vocab_size=cfg.vocab_size,
-                      tokens_path=cfg.tokens_path,
-                      id2token_path=cfg.id2token_path,
-                      encodings_path=cfg.encodings_path,
+                      tokens_path=hydra.utils.to_absolute_path(cfg.tokens_path),
+                      id2token_path=hydra.utils.to_absolute_path(cfg.id2token_path),
+                      encodings_path=hydra.utils.to_absolute_path(cfg.encodings_path),
                       comm=comm)
 
     if comm.Get_rank() == 0:
@@ -35,6 +35,8 @@ def main(cfg: DictConfig):
     if comm.Get_rank() == 0:
         print()
         print(time.time() - start_time)
+
+        bpe_obj.encode(text[:10000])
 
 
 if __name__ == "__main__":

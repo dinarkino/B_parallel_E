@@ -1,4 +1,5 @@
 text_path: "pride.txt"  # path to file to take text from
+encode_text_path: "pride.txt"  # path to file to encode
 vocab_size: 1000
 max_iters: 2000
 verbose: True  # Whether to print progress bar

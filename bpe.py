@@ -47,7 +47,7 @@ class BPE:
             if self.id2token_path.exists():
                 with open(self.id2token_path, "rb") as f:
                     self.id2token = pickle.load(f)
-                    assert isinstance(self.id2token, Counter)
+                    assert isinstance(self.id2token, dict)
                     
         if encodings_path is not None:
             self.encodings_path = Path(encodings_path)
@@ -120,61 +120,63 @@ class BPE:
         self.id2token[0] = '<UNK>'
         # Save vocab
         if rank == 0:
-            with open(hydra.utils.to_absolute_path(self.tokens_path), "wb") as f:
+            with open(self.tokens_path, "wb") as f:
                 pickle.dump(self.tokens, f)
-            with open(hydra.utils.to_absolute_path(self.id2token_path), "wb") as f:
+            with open(self.id2token_path, "wb") as f:
                 pickle.dump(self.id2token, f)
 
-    def encode(self, corpus: str) -> List[int]:
+    def encode(self, corpus: List[str]) -> None:
         """
         Apply byte pair encodung to text
-        :param corpus: string with text to encode
+        :param corpus: list of strings to encode
         :return: list of strings -- encoded text
         """
         if len(self.tokens) == 0:
             raise ModelNotTrainedError("BPE model is not trained. Call train before applying the model")
-        
-        words = corpus.strip().split()
-        words_per_process = len(words) // self.size
 
-        if self.rank == self.size - 1:
-            words = words[self.rank * words_per_process:]
-        else:
-            words = words[self.rank * words_per_process:(self.rank + 1) * words_per_process]
-
-        words_string = '</w>'.join(words) + '</w>'
-
-        def _encode(string, tokens, id):
-            if string == '':
-                return []
-            if len(tokens) == 0:
-                return [0]
-
-            token = tokens[0]
-            token_reg = re.escape(token)
-
-            string_tokens = []
-            matched_positions = [(m.start(0), m.end(0)) for m in re.finditer(token_reg, string)]
-            if len(matched_positions) == 0:
-                return _encode(string, tokens[1:], id + 1)
-            substring_end_positions = [matched_position[0] for matched_position in matched_positions]
-
-            substring_start_position = 0
-            for substring_end_position in substring_end_positions:
-                substring = string[substring_start_position:substring_end_position]
-                string_tokens += _encode(substring, tokens[1:], id + 1)
-                string_tokens += [id]
-                substring_start_position = substring_end_position + len(token)
-            remaining_substring = string[substring_start_position:]
-            string_tokens += _encode(remaining_substring, tokens[1:], id + 1)
-
-            return string_tokens
-
-        ids = _encode(words_string, self.tokens, 1)
-        ids = self.comm.gather(ids, root=0)
-        ids = [item for sublist in ids for item in sublist]
-        
-        with open(hydra.utils.to_absolute_path(self.encodings_path), "wb") as f:
-                pickle.dump(ids, f)
+        ids_list = []
+        for sentence in corpus:
+            words = sentence.strip().split()
+            words_per_process = len(words) // self.size
     
+            if self.rank == self.size - 1:
+                words = words[self.rank * words_per_process:]
+            else:
+                words = words[self.rank * words_per_process:(self.rank + 1) * words_per_process]
+    
+            words_string = '</w>'.join(words) + '</w>'
+    
+            def _encode(string, tokens, id):
+                if string == '':
+                    return []
+                if len(tokens) == 0:
+                    return [0]
+    
+                token = tokens[0]
+                token_reg = re.escape(token)
+    
+                string_tokens = []
+                matched_positions = [(m.start(0), m.end(0)) for m in re.finditer(token_reg, string)]
+                if len(matched_positions) == 0:
+                    return _encode(string, tokens[1:], id + 1)
+                substring_end_positions = [matched_position[0] for matched_position in matched_positions]
+    
+                substring_start_position = 0
+                for substring_end_position in substring_end_positions:
+                    substring = string[substring_start_position:substring_end_position]
+                    string_tokens += _encode(substring, tokens[1:], id + 1)
+                    string_tokens += [id]
+                    substring_start_position = substring_end_position + len(token)
+                remaining_substring = string[substring_start_position:]
+                string_tokens += _encode(remaining_substring, tokens[1:], id + 1)
+    
+                return string_tokens
+    
+            ids = _encode(words_string, self.tokens, 1)
+            ids = self.comm.gather(ids, root=0)
+            ids = [item for sublist in ids for item in sublist]
+            ids_list.append(ids)
         
+        with open(self.encodings_path, "wb") as f:
+            pickle.dump(ids_list, f)
+            print(ids_list)
