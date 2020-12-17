@@ -1,0 +1,9 @@
+text_path: "pride.txt"  # path to file to take text from
+vocab_size: 100
+max_iters: None
+verbose: True  # Whether to print progress bar
+tokens_path: "tokens.pkl"  # path to file to save vocab dict to
+id2token_path: "id2token.pkl"
+encodings_path: "encodings.pkl"
+store_files: False
+out_folder: "/home/alexey/Education/Skoltech/HPPL/project/B_parallel_E/outputs"
